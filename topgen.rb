@@ -282,9 +282,9 @@ class CNML
 		nodeLinks
 	end
 
-	def collectCoreNodes()
+	def collectCoreNodes(dirname)
 		corenodes = Array.new
-		filename = "#{File.basename(@xmlfile, ".*")}-corenodes.txt"
+		filename = "#{dirname}/#{File.basename(@xmlfile, ".*")}-corenodes.txt"
 		File.open(filename, 'w') do |file|  
 			XPath.each(@doc, "//node") { |node|
 				id = node.attributes['id']
@@ -349,7 +349,10 @@ class CNML
 	end
 
 	def createTopology(type)
-		@corenodes = collectCoreNodes
+		dir = createTopologyDir
+
+		@corenodes = collectCoreNodes(dir)
+
 		startNodeID = @corenodes.sample
 		if $VERBOSE		
 			puts "### Begin creating topology from node #{startNodeID} ###"
