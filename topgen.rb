@@ -348,7 +348,7 @@ class CNML
 		end
 	end
 
-	def createTopology()
+	def createTopology(type)
 		@corenodes = collectCoreNodes
 		startNodeID = @corenodes.sample
 		if $VERBOSE		
@@ -363,7 +363,24 @@ class CNML
 		if (getTopologySize < @maxnodes || getTopologySize > @maxnodes)
 			puts "Topology - startNode #{startNodeID} - topology size (#{getTopologySize}) does NOT match wanted size (#{@maxnodes})! - No NS file created."
 		elsif (getTopologySize == @maxnodes)
-			#ccnml.createVirtualBigLanBMX6("VirtualBMX6BigLan#{i}-#{startNode}-#{minNodes}")
+			dir = createTopologyDir
+	
+			# extract the nodes from the topology
+			extractNodes
+			# Write the nodes to a file
+			writeNodes(dir)
+			# extract the links from the topology
+			extractLinks
+			# Write the links to a file
+			writeLinks(dir)
+			# Create a visual graph
+			createGraph(dir)
+
+			if (type == "bmx")
+				createVirtualBigLanBMX6("VirtualBMX6BigLan-#{startNodeID}-#{@maxnodes}")
+			elsif (type == "olsr")
+				createVirtualBigLanOLSRd("VirtualOLSRdBigLan-#{startNodeID}-#{@maxnodes}")
+			end
 			puts "Created topology from start node #{startNodeID} with a topology size of #{getTopologySize}"
 		end
 	
@@ -371,22 +388,250 @@ class CNML
 			puts "### End creating topology from node #{startNodeID} ###"
 		end
 
-		dir = createTopologyDir
-	
-		# extract the nodes from the topology
-		extractNodes
-		# Write the nodes to a file
-		writeNodes(dir)
-		# extract the links from the topology
-		extractLinks
-		# Write the links to a file
-		writeLinks(dir)
-		# Create a visual graph
-		createGraph(dir)
 		return @topology
+	end
+
+	def createFilterFiles(dir)
+		@links.each do |link|
+			print "Link < "
+    			link.each do |l|
+    				print l + " "
+			end
+			print ">"
+			puts ""
+		end
+		@nodes.each do |node|
+			linkedNodes = getNodeLinkNodes(node)
+			filename = "#{dir}/node#{node}.filter"
+			File.open(filename, 'w') do |file| 
+				linkedNodes.each do |lnode|
+					file.puts "node#{lnode}\n"
+				end
+			end
+		end
+	end
+
+		# Creates NS experiment file out of @nodes and @links extracted from the topology
+	def createVirtualBigLanBMX6(suffix="VirtualBigLanBMX6")
+		t = Time.now
+		topologyName = "#{t.strftime("%Y-%m-%d-%H-%M-%S")}-#{suffix}"
+		FileUtils.mkdir topologyName
+		createFilterFiles topologyName
+		# Create a new file and write to it
+		
+		filename = "#{topologyName}/#{topologyName}.ns"
+		File.open(filename, 'w') do |file|  
+  			# use "\n" for two lines of text  
+  			file.puts "set ns [new Simulator]\n"			
+        		file.puts "source tb_compat.tcl\n\n"
+
+			file.puts "set nodeGroupInstall [$ns event-group]\n"
+			file.puts "set nodeGroupWriteIPv6 [$ns event-group]\n"
+			file.puts "set nodeGroupFilter [$ns event-group]\n"
+			file.puts "set nodeGroupRouteCheck [$ns event-group]\n"
+			file.puts "set nodeGroupInstallBMX6 [$ns event-group]\n"
+			file.puts "set nodeGroupBMX6 [$ns event-group]\n"
+
+			file.puts "set monitorSetupEnv [$ns event-group]\n"
+			file.puts "set monitorSetRouter [$ns event-group]\n"
+			file.puts "set monitorFailPass [$ns event-group]\n"
+			file.puts "set monitorStartTcpdump [$ns event-group]\n"
+			file.puts "set monitorStopTcpdump [$ns event-group]\n"
+			file.puts "set monitorIntervalLog [$ns event-group]\n\n"
+			
+			# define the nodes
+			@nodes.each do |node|
+				file.puts "set node#{node} [$ns node]\n"
+				# Automatically place BMX6 on the node (in dir /usr/local/src).
+				file.puts "tb-set-node-tarfiles $node#{node} /usr/local/src/ /proj/CONFINE/tarfiles/bmx6.tar.gz"
+				file.puts "append lanstr \"$node#{node} \"\n"
+
+				file.puts "set progInstall#{node} [$node#{node} program-agent -command \"sudo /proj/CONFINE/runme-BMX6/virtual/install_ip6tables.sh\"]\n"
+				file.puts "set progInstallBMX6#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/install_BMX6.sh\"]\n"
+				file.puts "set progWriteIPv6#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/ipv6tofile.sh\"]\n"
+				file.puts "set progFilter#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/filter_ip6tables.sh\"]\n"
+				file.puts "set progRouteCheck#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/routeCheck.sh\"]\n"
+				file.puts "set progBMX6#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/start_BMX6.sh\"]\n"
+
+				file.puts "$nodeGroupInstall add $progInstall#{node}\n"
+				file.puts "$nodeGroupInstallBMX6 add $progInstallBMX6#{node}\n"
+    				file.puts "$nodeGroupWriteIPv6 add $progWriteIPv6#{node}\n"
+				file.puts "$nodeGroupFilter add $progFilter#{node}\n"
+				file.puts "$nodeGroupRouteCheck add $progRouteCheck#{node}\n"
+    				file.puts "$nodeGroupBMX6 add $progBMX6#{node}\n"
+				file.puts "\n"
+			end
+
+			# define the image of the nodes
+			@nodes.each do |node|
+				file.puts "tb-set-hardware $node#{node} pcvm\n"
+				file.puts "tb-set-node-os $node#{node} OPENVZ-STD\n"
+			end
+			file.puts "\n"
+
+			file.puts "set nodeMonitor [$ns node]\n"
+			file.puts "tb-set-hardware $nodeMonitor pcvm\n"
+			file.puts "tb-set-node-os $nodeMonitor OPENVZ-STD\n"
+
+			file.puts "set progSetupEnv [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/setup_exp_env.sh\"]\n"
+			file.puts "set progSetRouter [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-BMX6/virtual/setRouter.sh\"]\n"
+			file.puts "set progFailPass [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-BMX6/virtual/failpass.sh #{@nodes.length}\"]\n"
+			file.puts "set progStartTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/start_tcpdump.sh\"]\n"
+			file.puts "set progIntervalLog [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/start_interval_logging.sh\"]\n"
+			file.puts "set progStopTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/stop_tcpdump.sh\"]\n"
+			
+			file.puts "$monitorSetupEnv add $progSetupEnv\n"
+			file.puts "$monitorSetRouter add $progSetRouter\n"
+			file.puts "$monitorFailPass add $progFailPass\n"
+			file.puts "$monitorStartTcpdump add $progStartTcpdump\n"
+			file.puts "$monitorIntervalLog add $progIntervalLog\n"
+    			file.puts "$monitorStopTcpdump add $progStopTcpdump\n"
+			file.puts "append lanstr \"$nodeMonitor \"\n"
+			file.puts "\n"
+
+			file.puts "set nodePhysical [$ns node]\n"
+			file.puts "tb-set-node-os $nodePhysical UBUNTU12-64-STD\n"
+			file.puts "append lanstr \"$nodePhysical \"\n"
+			file.puts "\n"
+
+			file.puts "set big-lan [$ns make-lan \"$lanstr\" 1000Mb 20ms]\n"
+			file.puts "\n"
+
+			file.puts "$ns at 30 \"$monitorSetupEnv start\"\n"
+			file.puts "$ns at 40 \"$monitorSetRouter start\"\n"
+			file.puts "$ns at 50 \"$nodeGroupInstall start\"\n"
+			file.puts "$ns at 55 \"$nodeGroupInstallBMX6 start\"\n"
+			file.puts "$ns at 180 \"$nodeGroupWriteIPv6 start\"\n"
+			file.puts "$ns at 230 \"$monitorFailPass start\"\n"
+			file.puts "$ns at 240 \"$nodeGroupFilter start\"\n"
+			file.puts "$ns at 290 \"$nodeGroupRouteCheck start\"\n"
+			file.puts "$ns at 300 \"$monitorStartTcpdump start\"\n"
+			file.puts "$ns at 318 \"$monitorIntervalLog start\"\n"
+			file.puts "$ns at 320 \"$nodeGroupBMX6 start\"\n"
+			file.puts "$ns at 500 \"$monitorStopTcpdump start\"\n"
+			
+			file.puts "# $ns at 540.0 \"$ns swapout\"\n"
+
+			file.puts "$ns run"
+		end
+	end
+
+		# Creates NS experiment file out of @nodes and @links extracted from the topology
+	def createVirtualBigLanOLSRd(suffix="VirtualBigLanOLSRd")
+		t = Time.now
+		topologyName = "#{t.strftime("%Y-%m-%d-%H-%M-%S")}-#{suffix}"
+		FileUtils.mkdir topologyName
+		createFilterFiles topologyName
+		# Create a new file and write to it
+		
+		filename = "#{topologyName}/#{topologyName}.ns"
+		File.open(filename, 'w') do |file|  
+  			# use "\n" for two lines of text  
+  			file.puts "set ns [new Simulator]\n"			
+        		file.puts "source tb_compat.tcl\n\n"
+
+			file.puts "set nodeGroupInstall [$ns event-group]\n"
+			file.puts "set nodeGroupSetIPv6 [$ns event-group]\n"
+			file.puts "set nodeGroupWriteIPv6 [$ns event-group]\n"
+			file.puts "set nodeGroupFilter [$ns event-group]\n"
+			file.puts "set nodeGroupRouteCheck [$ns event-group]\n"
+			file.puts "set nodeGroupInstallOLSRd [$ns event-group]\n"
+			file.puts "set nodeGroupOLSRd [$ns event-group]\n"
+
+			file.puts "set monitorSetupEnv [$ns event-group]\n"
+			file.puts "set monitorSetRouter [$ns event-group]\n"
+			file.puts "set monitorFailPass [$ns event-group]\n"
+			file.puts "set monitorStartTcpdump [$ns event-group]\n"
+			file.puts "set monitorStopTcpdump [$ns event-group]\n"
+			file.puts "set monitorIntervalLog [$ns event-group]\n\n"
+			
+			# define the nodes
+			@nodes.each do |node|
+				file.puts "set node#{node} [$ns node]\n"
+				# Automatically place BMX6 on the node (in dir /usr/local/src).
+				file.puts "tb-set-node-tarfiles $node#{node} /usr/local/src/ /proj/CONFINE/tarfiles/olsrd-0.6.5.2.tar.gz"
+				file.puts "append lanstr \"$node#{node} \"\n"
+
+				file.puts "set progInstall#{node} [$node#{node} program-agent -command \"sudo /proj/CONFINE/runme-OLSR/virtual/install_ip6tables.sh\"]\n"
+				file.puts "set progInstallOLSRd#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/install_OLSR.sh\"]\n"
+				file.puts "set progSetIPv6#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/setIPv6.sh\"]\n"
+				file.puts "set progWriteIPv6#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/ipv6tofile.sh\"]\n"
+				file.puts "set progFilter#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/filter_ip6tables.sh\"]\n"
+				file.puts "set progRouteCheck#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/routeCheck.sh\"]\n"
+				file.puts "set progOLSRd#{node} [$node#{node} program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/start_OLSR.sh\"]\n"
+
+				file.puts "$nodeGroupInstall add $progInstall#{node}\n"
+				file.puts "$nodeGroupInstallOLSRd add $progInstallOLSRd#{node}\n"
+				file.puts "$nodeGroupSetIPv6 add $progSetIPv6#{node}\n"
+    				file.puts "$nodeGroupWriteIPv6 add $progWriteIPv6#{node}\n"
+				file.puts "$nodeGroupFilter add $progFilter#{node}\n"
+				file.puts "$nodeGroupRouteCheck add $progRouteCheck#{node}\n"
+    				file.puts "$nodeGroupOLSRd add $progOLSRd#{node}\n"
+				file.puts "\n"
+			end
+
+			# define the image of the nodes
+			@nodes.each do |node|
+				file.puts "tb-set-hardware $node#{node} pcvm\n"
+				file.puts "tb-set-node-os $node#{node} OPENVZ-STD\n"
+			end
+			file.puts "\n"
+
+			file.puts "set nodeMonitor [$ns node]\n"
+			file.puts "tb-set-hardware $nodeMonitor pcvm\n"
+			file.puts "tb-set-node-os $nodeMonitor OPENVZ-STD\n"
+
+			file.puts "set progSetupEnv [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/setup_exp_env.sh\"]\n"
+			file.puts "set progSetRouter [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-OLSR/virtual/setRouter.sh\"]\n"			
+			file.puts "set progFailPass [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-OLSR/virtual/failpass.sh #{@nodes.length}\"]\n"
+			file.puts "set progStartTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/start_tcpdump.sh\"]\n"
+			file.puts "set progIntervalLog [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/start_interval_logging.sh\"]\n"
+			file.puts "set progStopTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/stop_tcpdump.sh\"]\n"
+			file.puts "$monitorSetupEnv add $progSetupEnv\n"
+			file.puts "$monitorSetRouter add $progSetRouter\n"
+			file.puts "$monitorFailPass add $progFailPass\n"
+			file.puts "$monitorStartTcpdump add $progStartTcpdump\n"
+			file.puts "$monitorIntervalLog add $progIntervalLog\n"
+    			file.puts "$monitorStopTcpdump add $progStopTcpdump\n"
+			file.puts "append lanstr \"$nodeMonitor \"\n"
+			file.puts "\n"
+
+			file.puts "set nodePhysical [$ns node]\n"
+			file.puts "tb-set-node-os $nodePhysical UBUNTU12-64-STD\n"
+			file.puts "append lanstr \"$nodePhysical \"\n"
+			file.puts "\n"
+
+			file.puts "set big-lan [$ns make-lan \"$lanstr\" 1000Mb 20ms]\n"
+			file.puts "\n"
+
+			file.puts "$ns at 30 \"$monitorSetupEnv start\"\n"
+			file.puts "$ns at 40 \"$monitorSetRouter start\"\n"
+			file.puts "$ns at 50 \"$nodeGroupInstall start\"\n"
+			file.puts "$ns at 55 \"$nodeGroupInstallOLSRd start\"\n"
+			file.puts "$ns at 180 \"$nodeGroupSetIPv6 start\"\n"
+			file.puts "$ns at 220 \"$nodeGroupWriteIPv6 start\"\n"
+			file.puts "$ns at 260 \"$monitorFailPass start\"\n"
+			file.puts "$ns at 280 \"$nodeGroupFilter start\"\n"
+			file.puts "$ns at 310 \"$nodeGroupRouteCheck start\"\n"
+			file.puts "$ns at 320 \"$monitorStartTcpdump start\"\n"
+			file.puts "$ns at 338 \"$monitorIntervalLog start\"\n"
+			file.puts "$ns at 340 \"$nodeGroupOLSRd start\"\n"
+			file.puts "$ns at 540 \"$monitorStopTcpdump start\"\n"
+			
+			file.puts "# $ns at 540.0 \"$ns swapout\"\n"
+
+			file.puts "$ns run"
+		end 
 	end
 end
 
 nr_of_nodes = Integer(ARGV[0])
+type = String(ARGV[1])
 ccnml = CNML.new("cnml/baixpenedes.xml", nr_of_nodes)
-ccnml.createTopology
+if (type == "bmx")
+	ccnml.createTopology 'bmx'
+elsif (type == "olsr")
+	ccnml.createTopology 'olsr'
+else
+	ccnml.createTopology
+end
