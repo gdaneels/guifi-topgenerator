@@ -289,14 +289,16 @@ class CNML
 			XPath.each(@doc, "//node") { |node|
 				id = node.attributes['id']
 				XPath.each(node, ".//interface") { |iface|
-					# check if the interface has a ipv4 address in the range of the corenet (has thus a router daemon)
-					if @corenet === iface.attributes["ipv4"].to_s
-						if $VERBOSE						
-							puts "Wrote #{id} to file..."
-						end	
-						corenodes.push id
-						file.puts id
-						break
+					if (iface != nil)
+						# check if the interface has a ipv4 address in the range of the corenet (has thus a router daemon)
+						if @corenet === iface.attributes["ipv4"].to_s
+							if $VERBOSE						
+								puts "Wrote #{id} to file..."
+							end	
+							corenodes.push id
+							file.puts id
+							break
+						end
 					end
 				}
 			}
@@ -307,7 +309,7 @@ class CNML
 	end
 
 	# Create a visual graph of the topology
-	def createGraph(dirname)
+	def createGraph(dirname, startNodeID)
 		links = Array.new {Array.new}
 		links = @links
 		digraph do
@@ -316,7 +318,7 @@ class CNML
 			links.each{ |link|
 				edge "#{link[0]}", "#{link[1]}"
 			}
-			save "#{dirname}/languages", 'png'
+			save "#{dirname}/size-#{@maxnodes}-startnodeID-#{startNodeID}", 'png'
 		end
 	end
 
@@ -359,7 +361,7 @@ class CNML
 		end	
 		traverseFromNode startNodeID
 		if $VERBOSE
-			puts "Size of topology: " + getTopologySize
+			puts "Size of topology: #{getTopologySize}"
 		end
 
 		# Check if the topology has the right size.
@@ -377,7 +379,7 @@ class CNML
 			# Write the links to a file
 			writeLinks(dir)
 			# Create a visual graph
-			createGraph(dir)
+			createGraph(dir, startNodeID)
 
 			if (type == "bmx")
 				createVirtualBigLanBMX6("VirtualBMX6BigLan-#{startNodeID}-#{@maxnodes}")
