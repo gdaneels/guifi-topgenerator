@@ -110,12 +110,14 @@ class CNML
 		if (node != nil)
 			# check for the given interface
 			iface =	XPath.first(node, ".//interface[@id=#{ifaceID}]")
-			# check if the interface ip falls in the range
-			if @corenet === iface.attributes["ipv4"].to_s
-				if $VERBOSE
-					puts " :: YES"
+			if (iface != nil)
+				# check if the interface ip falls in the range
+				if @corenet === iface.attributes["ipv4"].to_s
+					if $VERBOSE
+						puts " :: YES"
+					end
+					return true
 				end
-				return true
 			end
 		end
 		if $VERBOSE
@@ -307,7 +309,7 @@ class CNML
 	end
 
 	# Create a visual graph of the topology
-	def createGraph(dirname)
+	def createGraph(dirname, startNodeID)
 		links = Array.new {Array.new}
 		links = @links
 		digraph do
@@ -316,7 +318,7 @@ class CNML
 			links.each{ |link|
 				edge "#{link[0]}", "#{link[1]}"
 			}
-			save "#{dirname}/languages", 'png'
+			save "#{dirname}/size-#{@maxnodes}-startnodeID-#{startNodeID}", 'png'
 		end
 	end
 
@@ -358,7 +360,7 @@ class CNML
 		end	
 		traverseFromNode startNodeID
 		if $VERBOSE
-			puts "Size of topology: " + getTopologySize
+			puts "Size of topology:  #{getTopologySize}"
 		end
 
 		# Check if the topology has the right size.
@@ -388,5 +390,5 @@ class CNML
 end
 
 nr_of_nodes = Integer(ARGV[0])
-ccnml = CNML.new("cnml/baixpenedes.xml", nr_of_nodes)
+ccnml = CNML.new("cnml/barcelones.cnml", nr_of_nodes)
 ccnml.createTopology
