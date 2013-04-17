@@ -312,13 +312,14 @@ class CNML
 	def createGraph(dirname, startNodeID)
 		links = Array.new {Array.new}
 		links = @links
+		maxnodes = @maxnodes
 		digraph do
 			node_attribs << lightblue << filled
 			edge_attribs << arrowhead('none')
 			links.each{ |link|
 				edge "#{link[0]}", "#{link[1]}"
 			}
-			save "#{dirname}/size-#{@maxnodes}-startnodeID-#{startNodeID}", 'png'
+			save "#{dirname}/size-#{maxnodes}-startnodeID-#{startNodeID}", 'png'
 		end
 	end
 
