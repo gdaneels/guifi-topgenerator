@@ -110,12 +110,14 @@ class CNML
 		if (node != nil)
 			# check for the given interface
 			iface =	XPath.first(node, ".//interface[@id=#{ifaceID}]")
-			# check if the interface ip falls in the range
-			if @corenet === iface.attributes["ipv4"].to_s
-				if $VERBOSE
-					puts " :: YES"
+			if (iface != nil)
+				# check if the interface ip falls in the range
+				if @corenet === iface.attributes["ipv4"].to_s
+					if $VERBOSE
+						puts " :: YES"
+					end
+					return true
 				end
-				return true
 			end
 		end
 		if $VERBOSE
@@ -483,7 +485,7 @@ class CNML
 			file.puts "set progSetRouter [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-BMX6/virtual/setRouter.sh\"]\n"
 			file.puts "set progFailPass [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-BMX6/virtual/failpass.sh #{@nodes.length}\"]\n"
 			file.puts "set progStartTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/start_tcpdump.sh\"]\n"
-			file.puts "set progIntervalLog [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/start_interval_logging.sh\"]\n"
+			file.puts "set progIntervalLog [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/start_interval_logging_special.sh\"]\n"
 			file.puts "set progStopTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-BMX6/virtual/stop_tcpdump.sh\"]\n"
 			
 			file.puts "$monitorSetupEnv add $progSetupEnv\n"
@@ -500,7 +502,7 @@ class CNML
 			file.puts "append lanstr \"$nodePhysical \"\n"
 			file.puts "\n"
 
-			file.puts "set big-lan [$ns make-lan \"$lanstr\" 1000Mb 20ms]\n"
+			file.puts "set big-lan [$ns make-lan \"$lanstr\" 100Mb 20ms]\n"
 			file.puts "\n"
 
 			file.puts "$ns at 30 \"$monitorSetupEnv start\"\n"
@@ -514,7 +516,6 @@ class CNML
 			file.puts "$ns at 300 \"$monitorStartTcpdump start\"\n"
 			file.puts "$ns at 318 \"$monitorIntervalLog start\"\n"
 			file.puts "$ns at 320 \"$nodeGroupBMX6 start\"\n"
-			file.puts "$ns at 500 \"$monitorStopTcpdump start\"\n"
 			
 			file.puts "# $ns at 540.0 \"$ns swapout\"\n"
 
@@ -591,7 +592,7 @@ class CNML
 			file.puts "set progSetRouter [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-OLSR/virtual/setRouter.sh\"]\n"			
 			file.puts "set progFailPass [$nodeMonitor program-agent -command \"sudo /proj/CONFINE/runme-OLSR/virtual/failpass.sh #{@nodes.length}\"]\n"
 			file.puts "set progStartTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/start_tcpdump.sh\"]\n"
-			file.puts "set progIntervalLog [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/start_interval_logging.sh\"]\n"
+			file.puts "set progIntervalLog [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/start_interval_logging_special.sh\"]\n"
 			file.puts "set progStopTcpdump [$nodeMonitor program-agent -command \"/proj/CONFINE/runme-OLSR/virtual/stop_tcpdump.sh\"]\n"
 			file.puts "$monitorSetupEnv add $progSetupEnv\n"
 			file.puts "$monitorSetRouter add $progSetRouter\n"
@@ -607,7 +608,7 @@ class CNML
 			file.puts "append lanstr \"$nodePhysical \"\n"
 			file.puts "\n"
 
-			file.puts "set big-lan [$ns make-lan \"$lanstr\" 1000Mb 20ms]\n"
+			file.puts "set big-lan [$ns make-lan \"$lanstr\" 100Mb 20ms]\n"
 			file.puts "\n"
 
 			file.puts "$ns at 30 \"$monitorSetupEnv start\"\n"
@@ -622,8 +623,7 @@ class CNML
 			file.puts "$ns at 320 \"$monitorStartTcpdump start\"\n"
 			file.puts "$ns at 338 \"$monitorIntervalLog start\"\n"
 			file.puts "$ns at 340 \"$nodeGroupOLSRd start\"\n"
-			file.puts "$ns at 540 \"$monitorStopTcpdump start\"\n"
-			
+
 			file.puts "# $ns at 540.0 \"$ns swapout\"\n"
 
 			file.puts "$ns run"
@@ -633,7 +633,7 @@ end
 
 nr_of_nodes = Integer(ARGV[0])
 type = String(ARGV[1])
-ccnml = CNML.new("cnml/baixpenedes.xml", nr_of_nodes)
+ccnml = CNML.new("cnml/barcelones.cnml", nr_of_nodes)
 if (type == "bmx")
 	ccnml.createTopology 'bmx'
 elsif (type == "olsr")
